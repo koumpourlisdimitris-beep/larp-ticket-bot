@@ -94,7 +94,6 @@ return new ActionRowBuilder().addComponents(
     closeButton
 );
 
-
 }
 
 client.once(Events.ClientReady, async () => {
@@ -102,7 +101,6 @@ console.log(
 "Logged in as " +
 client.user.tag
 );
-
 
 await updateTicketActivity();
 
@@ -159,13 +157,11 @@ try {
     );
 }
 
-
 });
 
 client.on(
 Events.InteractionCreate,
 async interaction => {
-
 
     if (
         interaction.isButton() &&
@@ -229,12 +225,21 @@ async interaction => {
             return;
         }
 
+        const safeUsername =
+            interaction.user.username
+                .toLowerCase()
+                .replace(/[^a-z0-9-_]/g, "-")
+                .replace(/-+/g, "-")
+                .substring(0, 80);
+
+        const ticketName =
+            "ticket-" +
+            safeUsername;
+
         const existingTicket =
             guild.channels.cache.find(
                 channel =>
-                    channel.name ===
-                    "ticket-" +
-                    interaction.user.id
+                    channel.name === ticketName
             );
 
         if (existingTicket) {
@@ -260,9 +265,7 @@ async interaction => {
         try {
             const ticketChannel =
                 await guild.channels.create({
-                    name:
-                        "ticket-" +
-                        interaction.user.id,
+                    name: ticketName,
 
                     type:
                         ChannelType.GuildText,
@@ -629,29 +632,22 @@ async interaction => {
             );
 
             const ticketUserId =
-                channel.name.substring(
-                    "ticket-".length
-                );
+                channel.topic &&
+                channel.topic.startsWith("CLAIMED_BY:")
+                    ? null
+                    : null;
 
-            if (
-                /^\d+$/.test(ticketUserId)
-            ) {
-                await channel.permissionOverwrites.edit(
-                    ticketUserId,
-                    {
-                        ViewChannel: true,
-                        SendMessages: false,
-                        ReadMessageHistory: true
-                    }
-                );
-            }
+            const channelName =
+                channel.name.startsWith("ticket-")
+                    ? channel.name.substring(7)
+                    : channel.name;
 
             if (
                 channel.name.startsWith("ticket-")
             ) {
                 await channel.setName(
                     "closed-" +
-                    ticketUserId
+                    channelName
                 );
             }
 
@@ -683,7 +679,6 @@ async interaction => {
     }
 }
 
-
 );
 
 if (!TOKEN) {
@@ -691,9 +686,7 @@ console.error(
 "DISCORD_TOKEN is missing."
 );
 
-
 process.exit(1);
-
 
 }
 
@@ -703,3 +696,4 @@ console.error(
 error
 );
 });
+
