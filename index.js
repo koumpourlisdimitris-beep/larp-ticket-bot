@@ -1,4 +1,3 @@
-```javascript
 const {
     Client,
     GatewayIntentBits,
@@ -896,4 +895,3 @@ client.login(TOKEN).catch((error) => {
         error
     );
 });
-```
