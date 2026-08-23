@@ -1,193 +1,535 @@
 const {
-    Client,
-    GatewayIntentBits,
-    ChannelType,
-    PermissionFlagsBits,
-    ActionRowBuilder,
-    ButtonBuilder,
-    ButtonStyle,
-    ModalBuilder,
-    TextInputBuilder,
-    TextInputStyle,
-    EmbedBuilder,
-    Events,
-    ActivityType,
-    MessageFlags
+Client,
+GatewayIntentBits,
+ChannelType,
+PermissionFlagsBits,
+ActionRowBuilder,
+ButtonBuilder,
+ButtonStyle,
+ModalBuilder,
+TextInputBuilder,
+TextInputStyle,
+EmbedBuilder,
+Events,
+ActivityType,
+MessageFlags
 } = require("discord.js");
-
-// ==========================================
-// CONFIGURATION
-// ==========================================
 
 const TOKEN = process.env.DISCORD_TOKEN;
 
-const TICKET_PANEL_CHANNEL_ID = 1541034126017171476;
-
-const TICKET_CATEGORY_ID = 1541033963651465266;
-
+const TICKET_PANEL_CHANNEL_ID = "1541034126017171476";
+const TICKET_CATEGORY_ID = "1541033963651465266";
 const SUPPORT_ROLE_ID = "1517358979179876384";
 
-// ==========================================
-// TOKEN CHECK
-// ==========================================
-
-if (!TOKEN) {
-    console.error("DISCORD_TOKEN is missing.");
-    process.exit(1);
-}
-
-// ==========================================
-// CLIENT
-// ==========================================
-
 const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds
-    ]
+intents: [
+GatewayIntentBits.Guilds
+]
 });
 
-// ==========================================
-// UPDATE BOT ACTIVITY
-// ==========================================
+function isSupportStaff(interaction) {
+return (
+interaction.member &&
+interaction.member.roles &&
+interaction.member.roles.cache.has(SUPPORT_ROLE_ID)
+);
+}
 
 async function updateTicketActivity() {
-    try {
-        const category = await client.channels.fetch(
-            TICKET_CATEGORY_ID
-        );
+try {
+if (!client.user) {
+return;
+}
 
-        if (!category || !category.guild) {
-            return;
-        }
+    const guild = client.guilds.cache.first();
 
-        const ticketCount = category.guild.channels.cache.filter(
-            channel =>
-                channel.parentId === TICKET_CATEGORY_ID &&
-                channel.name.startsWith("ticket-")
-        ).size;
-
-        client.user.setActivity(
-            "Handling " + ticketCount + " tickets",
-            {
-                type: ActivityType.Playing
-            }
-        );
-
-        console.log(
-            "Ticket activity updated: Handling " +
-            ticketCount +
-            " tickets"
-        );
-
-    } catch (error) {
-        console.error(
-            "Could not update ticket activity:",
-            error
-        );
+    if (!guild) {
+        return;
     }
-}
 
-// ==========================================
-// SUPPORT STAFF CHECK
-// ==========================================
+    const ticketCount = guild.channels.cache.filter(
+        channel =>
+            channel.type === ChannelType.GuildText &&
+            channel.parentId === TICKET_CATEGORY_ID &&
+            channel.name.startsWith("ticket-")
+    ).size;
 
-function isSupportStaff(interaction) {
-    return interaction.member &&
-        interaction.member.roles &&
-        interaction.member.roles.cache.has(SUPPORT_ROLE_ID);
-}
-
-// ==========================================
-// BOT READY
-// ==========================================
-
-client.once(Events.ClientReady, async (bot) => {
-
-    console.log(
-        "Logged in as " +
-        bot.user.tag
+    client.user.setActivity(
+        "Handling " + ticketCount + " tickets",
+        {
+            type: ActivityType.Playing
+        }
     );
 
-    await updateTicketActivity();
+    console.log(
+        "Activity: Handling " +
+        ticketCount +
+        " tickets"
+    );
 
-    try {
+} catch (error) {
+    console.error(
+        "ACTIVITY ERROR:",
+        error
+    );
+}
 
-        const channel = await bot.channels.fetch(
+}
+
+function createTicketButtons() {
+const claimButton = new ButtonBuilder()
+.setCustomId("claim_ticket")
+.setLabel("Claim Ticket")
+.setEmoji("👤")
+.setStyle(ButtonStyle.Success);
+
+const closeButton = new ButtonBuilder()
+    .setCustomId("close_ticket")
+    .setLabel("Close Ticket")
+    .setEmoji("🔒")
+    .setStyle(ButtonStyle.Danger);
+
+return new ActionRowBuilder().addComponents(
+    claimButton,
+    closeButton
+);
+
+
+}
+
+client.once(Events.ClientReady, async () => {
+console.log(
+"Logged in as " +
+client.user.tag
+);
+
+
+await updateTicketActivity();
+
+setInterval(
+    updateTicketActivity,
+    30000
+);
+
+try {
+    const panelChannel =
+        await client.channels.fetch(
             TICKET_PANEL_CHANNEL_ID
         );
 
-        if (!channel) {
-            console.error(
-                "Ticket panel channel was not found."
-            );
+    if (!panelChannel) {
+        console.error(
+            "Ticket panel channel not found."
+        );
+        return;
+    }
+
+    const button = new ButtonBuilder()
+        .setCustomId("open_ticket")
+        .setLabel("Open Ticket")
+        .setEmoji("🎫")
+        .setStyle(ButtonStyle.Primary);
+
+    const row = new ActionRowBuilder()
+        .addComponents(button);
+
+    await panelChannel.send({
+        embeds: [
+            new EmbedBuilder()
+                .setTitle("LARP Support")
+                .setDescription(
+                    "Need help?\n\n" +
+                    "Click the button below to create a support ticket."
+                )
+                .setColor(0x5865F2)
+        ],
+        components: [
+            row
+        ]
+    });
+
+    console.log(
+        "Ticket panel sent."
+    );
+
+} catch (error) {
+    console.error(
+        "PANEL ERROR:",
+        error
+    );
+}
+
+
+});
+
+client.on(
+Events.InteractionCreate,
+async interaction => {
+
+
+    if (
+        interaction.isButton() &&
+        interaction.customId === "open_ticket"
+    ) {
+        const modal = new ModalBuilder()
+            .setCustomId("open_ticket_modal")
+            .setTitle("Open Support Ticket");
+
+        const reasonInput = new TextInputBuilder()
+            .setCustomId("ticket_reason")
+            .setLabel(
+                "Why are you opening this ticket?"
+            )
+            .setPlaceholder(
+                "Explain what you need help with."
+            )
+            .setStyle(TextInputStyle.Paragraph)
+            .setRequired(true)
+            .setMaxLength(1000);
+
+        const usernameInput = new TextInputBuilder()
+            .setCustomId("roblox_username")
+            .setLabel("Roblox Username")
+            .setPlaceholder(
+                "Enter your Roblox username."
+            )
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setMaxLength(100);
+
+        modal.addComponents(
+            new ActionRowBuilder()
+                .addComponents(reasonInput),
+
+            new ActionRowBuilder()
+                .addComponents(usernameInput)
+        );
+
+        await interaction.showModal(modal);
+
+        return;
+    }
+
+    if (
+        interaction.isModalSubmit() &&
+        interaction.customId === "open_ticket_modal"
+    ) {
+        await interaction.deferReply({
+            flags: MessageFlags.Ephemeral
+        });
+
+        const guild = interaction.guild;
+
+        if (!guild) {
+            await interaction.editReply({
+                content:
+                    "This can only be used inside a server."
+            });
+
             return;
         }
 
-        const openButton = new ButtonBuilder()
-            .setCustomId("open_ticket")
-            .setLabel("Open Ticket")
-            .setEmoji("\uD83C\uDFAB")
-            .setStyle(ButtonStyle.Primary);
+        const existingTicket =
+            guild.channels.cache.find(
+                channel =>
+                    channel.name ===
+                    "ticket-" +
+                    interaction.user.id
+            );
 
-        const row = new ActionRowBuilder()
-            .addComponents(openButton);
+        if (existingTicket) {
+            await interaction.editReply({
+                content:
+                    "You already have a ticket: " +
+                    existingTicket
+            });
 
-        await channel.send({
-            embeds: [
+            return;
+        }
+
+        const reason =
+            interaction.fields.getTextInputValue(
+                "ticket_reason"
+            );
+
+        const robloxUsername =
+            interaction.fields.getTextInputValue(
+                "roblox_username"
+            );
+
+        try {
+            const ticketChannel =
+                await guild.channels.create({
+                    name:
+                        "ticket-" +
+                        interaction.user.id,
+
+                    type:
+                        ChannelType.GuildText,
+
+                    parent:
+                        TICKET_CATEGORY_ID,
+
+                    permissionOverwrites: [
+                        {
+                            id:
+                                guild.roles.everyone.id,
+
+                            deny: [
+                                PermissionFlagsBits.ViewChannel
+                            ]
+                        },
+
+                        {
+                            id:
+                                interaction.user.id,
+
+                            allow: [
+                                PermissionFlagsBits.ViewChannel,
+                                PermissionFlagsBits.SendMessages,
+                                PermissionFlagsBits.ReadMessageHistory
+                            ]
+                        },
+
+                        {
+                            id:
+                                SUPPORT_ROLE_ID,
+
+                            allow: [
+                                PermissionFlagsBits.ViewChannel,
+                                PermissionFlagsBits.SendMessages,
+                                PermissionFlagsBits.ReadMessageHistory
+                            ]
+                        },
+
+                        {
+                            id:
+                                client.user.id,
+
+                            allow: [
+                                PermissionFlagsBits.ViewChannel,
+                                PermissionFlagsBits.SendMessages,
+                                PermissionFlagsBits.ReadMessageHistory,
+                                PermissionFlagsBits.ManageChannels,
+                                PermissionFlagsBits.ManageMessages
+                            ]
+                        }
+                    ]
+                });
+
+            const embed =
                 new EmbedBuilder()
-                    .setTitle("Support Tickets")
+                    .setTitle("Ticket Created")
                     .setDescription(
-                        "Need help?\n\n" +
-                        "Click the button below to open a private support ticket."
+                        "Welcome " +
+                        interaction.user +
+                        "!\n\n" +
+                        "A member of the Support Team will help you shortly."
+                    )
+                    .addFields(
+                        {
+                            name: "Roblox Username",
+                            value: robloxUsername,
+                            inline: true
+                        },
+                        {
+                            name: "Reason",
+                            value: reason
+                        }
                     )
                     .setColor(0x5865F2)
-            ],
-            components: [
-                row
-            ]
-        });
+                    .setTimestamp();
 
-        console.log(
-            "Ticket panel sent."
-        );
+            await ticketChannel.send({
+                content:
+                    "<@&" +
+                    SUPPORT_ROLE_ID +
+                    "> " +
+                    interaction.user,
 
-    } catch (error) {
+                embeds: [
+                    embed
+                ],
 
-        console.error(
-            "Could not send ticket panel:",
-            error
-        );
+                components: [
+                    createTicketButtons()
+                ],
+
+                allowedMentions: {
+                    roles: [
+                        SUPPORT_ROLE_ID
+                    ],
+                    users: [
+                        interaction.user.id
+                    ]
+                }
+            });
+
+            await updateTicketActivity();
+
+            await interaction.editReply({
+                content:
+                    "Your ticket has been created: " +
+                    ticketChannel
+            });
+
+            console.log(
+                "Ticket created by " +
+                interaction.user.tag
+            );
+
+        } catch (error) {
+            console.error(
+                "TICKET ERROR:",
+                error
+            );
+
+            await interaction.editReply({
+                content:
+                    "I could not create the ticket. Please check the bot permissions."
+            });
+        }
+
+        return;
     }
-});
 
-// ==========================================
-// INTERACTIONS
-// ==========================================
+    if (
+        interaction.isButton() &&
+        interaction.customId === "claim_ticket"
+    ) {
+        if (!isSupportStaff(interaction)) {
+            await interaction.reply({
+                content:
+                    "Only the Support Team can claim tickets.",
 
-client.on(
-    Events.InteractionCreate,
-    async (interaction) => {
+                flags:
+                    MessageFlags.Ephemeral
+            });
 
-        // ======================================
-        // OPEN TICKET BUTTON
-        // ======================================
+            return;
+        }
+
+        const channel =
+            interaction.channel;
+
+        if (!channel) {
+            return;
+        }
 
         if (
-            interaction.isButton() &&
-            interaction.customId === "open_ticket"
+            channel.topic &&
+            channel.topic.startsWith("CLAIMED_BY:")
         ) {
+            const claimedUserId =
+                channel.topic.substring(
+                    "CLAIMED_BY:".length
+                );
 
-            const modal = new ModalBuilder()
-                .setCustomId("open_ticket_modal")
-                .setTitle("Open Support Ticket");
+            await interaction.reply({
+                content:
+                    "This ticket has already been claimed by <@" +
+                    claimedUserId +
+                    ">.",
 
-            const reasonInput = new TextInputBuilder()
-                .setCustomId("ticket_reason")
+                flags:
+                    MessageFlags.Ephemeral
+            });
+
+            return;
+        }
+
+        try {
+            await channel.setTopic(
+                "CLAIMED_BY:" +
+                interaction.user.id
+            );
+
+            const claimButton =
+                new ButtonBuilder()
+                    .setCustomId("claim_ticket")
+                    .setLabel(
+                        "Claimed by " +
+                        interaction.user.username
+                    )
+                    .setEmoji("👤")
+                    .setStyle(ButtonStyle.Success)
+                    .setDisabled(true);
+
+            const closeButton =
+                new ButtonBuilder()
+                    .setCustomId("close_ticket")
+                    .setLabel("Close Ticket")
+                    .setEmoji("🔒")
+                    .setStyle(ButtonStyle.Danger);
+
+            const row =
+                new ActionRowBuilder()
+                    .addComponents(
+                        claimButton,
+                        closeButton
+                    );
+
+            await interaction.update({
+                components: [
+                    row
+                ]
+            });
+
+            await channel.send({
+                content:
+                    "This ticket has been claimed by " +
+                    interaction.user +
+                    "."
+            });
+
+        } catch (error) {
+            console.error(
+                "CLAIM ERROR:",
+                error
+            );
+
+            if (!interaction.replied) {
+                await interaction.reply({
+                    content:
+                        "I could not claim this ticket.",
+
+                    flags:
+                        MessageFlags.Ephemeral
+                });
+            }
+        }
+
+        return;
+    }
+
+    if (
+        interaction.isButton() &&
+        interaction.customId === "close_ticket"
+    ) {
+        if (!isSupportStaff(interaction)) {
+            await interaction.reply({
+                content:
+                    "Only the Support Team can close tickets.",
+
+                flags:
+                    MessageFlags.Ephemeral
+            });
+
+            return;
+        }
+
+        const modal = new ModalBuilder()
+            .setCustomId("close_ticket_modal")
+            .setTitle("Close Ticket");
+
+        const reasonInput =
+            new TextInputBuilder()
+                .setCustomId("close_reason")
                 .setLabel(
-                    "What is the reason for opening a ticket?"
+                    "Why are you closing this ticket?"
                 )
                 .setPlaceholder(
-                    "Describe the issue or problem."
+                    "Enter the reason for closing this ticket."
                 )
                 .setStyle(
                     TextInputStyle.Paragraph
@@ -195,703 +537,169 @@ client.on(
                 .setRequired(true)
                 .setMaxLength(1000);
 
-            const usernameInput = new TextInputBuilder()
-                .setCustomId("roblox_username")
-                .setLabel(
-                    "What is your Roblox username?"
+        modal.addComponents(
+            new ActionRowBuilder()
+                .addComponents(
+                    reasonInput
                 )
-                .setPlaceholder(
-                    "Your Roblox username"
-                )
-                .setStyle(
-                    TextInputStyle.Short
-                )
-                .setRequired(true)
-                .setMaxLength(100);
+        );
 
-            modal.addComponents(
-                new ActionRowBuilder()
-                    .addComponents(reasonInput),
+        await interaction.showModal(modal);
 
-                new ActionRowBuilder()
-                    .addComponents(usernameInput)
-            );
+        return;
+    }
 
-            await interaction.showModal(
-                modal
-            );
+    if (
+        interaction.isModalSubmit() &&
+        interaction.customId === "close_ticket_modal"
+    ) {
+        if (!isSupportStaff(interaction)) {
+            await interaction.reply({
+                content:
+                    "Only the Support Team can close tickets.",
+
+                flags:
+                    MessageFlags.Ephemeral
+            });
 
             return;
         }
 
-        // ======================================
-        // CLAIM TICKET
-        // ======================================
+        await interaction.deferReply({
+            flags:
+                MessageFlags.Ephemeral
+        });
 
-        if (
-            interaction.isButton() &&
-            interaction.customId === "claim_ticket"
-        ) {
+        const channel =
+            interaction.channel;
 
-            if (!isSupportStaff(interaction)) {
+        if (!channel) {
+            await interaction.editReply({
+                content:
+                    "Ticket channel not found."
+            });
 
-                return interaction.reply({
-                    content:
-                        "Only members of the Support Team can claim tickets.",
+            return;
+        }
 
-                    flags:
-                        MessageFlags.Ephemeral
-                });
-            }
+        const closeReason =
+            interaction.fields.getTextInputValue(
+                "close_reason"
+            );
 
-            const channel =
-                interaction.channel;
+        try {
+            await channel.send({
+                embeds: [
+                    new EmbedBuilder()
+                        .setTitle("Ticket Closed")
+                        .setDescription(
+                            "This ticket has been closed."
+                        )
+                        .addFields(
+                            {
+                                name: "Closed By",
+                                value:
+                                    interaction.user.toString(),
+                                inline: true
+                            },
+                            {
+                                name: "Reason",
+                                value: closeReason
+                            }
+                        )
+                        .setColor(0xED4245)
+                        .setTimestamp()
+                ]
+            });
 
-            if (!channel) {
+            await channel.permissionOverwrites.edit(
+                interaction.guild.roles.everyone.id,
+                {
+                    ViewChannel: false
+                }
+            );
 
-                return interaction.reply({
-                    content:
-                        "Ticket channel was not found.",
+            await channel.permissionOverwrites.edit(
+                SUPPORT_ROLE_ID,
+                {
+                    ViewChannel: true,
+                    SendMessages: false,
+                    ReadMessageHistory: true
+                }
+            );
 
-                    flags:
-                        MessageFlags.Ephemeral
-                });
+            const ticketUserId =
+                channel.name.substring(
+                    "ticket-".length
+                );
+
+            if (
+                /^\d+$/.test(ticketUserId)
+            ) {
+                await channel.permissionOverwrites.edit(
+                    ticketUserId,
+                    {
+                        ViewChannel: true,
+                        SendMessages: false,
+                        ReadMessageHistory: true
+                    }
+                );
             }
 
             if (
-                channel.topic &&
-                channel.topic.startsWith(
-                    "CLAIMED_BY:"
-                )
+                channel.name.startsWith("ticket-")
             ) {
-
-                const claimedUserId =
-                    channel.topic.substring(
-                        "CLAIMED_BY:".length
-                    );
-
-                return interaction.reply({
-                    content:
-                        "This ticket has already been claimed by <@" +
-                        claimedUserId +
-                        ">.",
-
-                    flags:
-                        MessageFlags.Ephemeral
-                });
-            }
-
-            try {
-
-                await channel.setTopic(
-                    "CLAIMED_BY:" +
-                    interaction.user.id
+                await channel.setName(
+                    "closed-" +
+                    ticketUserId
                 );
-
-                const claimButton =
-                    new ButtonBuilder()
-                        .setCustomId(
-                            "claim_ticket"
-                        )
-                        .setLabel(
-                            "Claimed by " +
-                            interaction.user.username
-                        )
-                        .setEmoji(
-                            "\uD83D\uDC64"
-                        )
-                        .setStyle(
-                            ButtonStyle.Success
-                        )
-                        .setDisabled(true);
-
-                const closeButton =
-                    new ButtonBuilder()
-                        .setCustomId(
-                            "close_ticket"
-                        )
-                        .setLabel(
-                            "Close Ticket"
-                        )
-                        .setEmoji(
-                            "\uD83D\uDD12"
-                        )
-                        .setStyle(
-                            ButtonStyle.Danger
-                        );
-
-                const row =
-                    new ActionRowBuilder()
-                        .addComponents(
-                            claimButton,
-                            closeButton
-                        );
-
-                await interaction.update({
-                    components: [
-                        row
-                    ]
-                });
-
-                await channel.send({
-                    content:
-                        "Ticket claimed by " +
-                        interaction.user
-                });
-
-            } catch (error) {
-
-                console.error(
-                    "CLAIM ERROR:",
-                    error
-                );
-
-                if (!interaction.replied) {
-
-                    await interaction.reply({
-                        content:
-                            "I could not claim this ticket.",
-
-                        flags:
-                            MessageFlags.Ephemeral
-                    });
-                }
             }
 
-            return;
-        }
+            await updateTicketActivity();
 
-        // ======================================
-        // CLOSE TICKET BUTTON
-        // ======================================
-
-        if (
-            interaction.isButton() &&
-            interaction.customId === "close_ticket"
-        ) {
-
-            if (!isSupportStaff(interaction)) {
-
-                return interaction.reply({
-                    content:
-                        "Only members of the Support Team can close tickets.",
-
-                    flags:
-                        MessageFlags.Ephemeral
-                });
-            }
-
-            const modal =
-                new ModalBuilder()
-                    .setCustomId(
-                        "close_ticket_modal"
-                    )
-                    .setTitle(
-                        "Close Ticket"
-                    );
-
-            const closeReasonInput =
-                new TextInputBuilder()
-                    .setCustomId(
-                        "close_reason"
-                    )
-                    .setLabel(
-                        "Why are you closing this ticket?"
-                    )
-                    .setPlaceholder(
-                        "Provide the reason for closing this ticket."
-                    )
-                    .setStyle(
-                        TextInputStyle.Paragraph
-                    )
-                    .setRequired(true)
-                    .setMaxLength(1000);
-
-            modal.addComponents(
-                new ActionRowBuilder()
-                    .addComponents(
-                        closeReasonInput
-                    )
-            );
-
-            await interaction.showModal(
-                modal
-            );
-
-            return;
-        }
-
-        // ======================================
-        // OPEN TICKET MODAL
-        // ======================================
-
-        if (
-            interaction.isModalSubmit() &&
-            interaction.customId === "open_ticket_modal"
-        ) {
-
-            await interaction.deferReply({
-                flags:
-                    MessageFlags.Ephemeral
+            await interaction.editReply({
+                content:
+                    "Ticket closed successfully."
             });
 
-            const guild =
-                interaction.guild;
+            console.log(
+                "Ticket closed by " +
+                interaction.user.tag
+            );
 
-            if (!guild) {
+        } catch (error) {
+            console.error(
+                "CLOSE ERROR:",
+                error
+            );
 
-                return interaction.editReply({
-                    content:
-                        "This can only be used inside a server."
-                });
-            }
-
-            const existingTicket =
-                guild.channels.cache.find(
-                    channel =>
-                        channel.name ===
-                        "ticket-" +
-                        interaction.user.id
-                );
-
-            if (existingTicket) {
-
-                return interaction.editReply({
-                    content:
-                        "You already have a ticket: " +
-                        existingTicket
-                });
-            }
-
-            const reason =
-                interaction.fields.getTextInputValue(
-                    "ticket_reason"
-                );
-
-            const robloxUsername =
-                interaction.fields.getTextInputValue(
-                    "roblox_username"
-                );
-
-            try {
-
-                const ticketChannel =
-                    await guild.channels.create({
-
-                        name:
-                            "ticket-" +
-                            interaction.user.id,
-
-                        type:
-                            ChannelType.GuildText,
-
-                        parent:
-                            TICKET_CATEGORY_ID,
-
-                        permissionOverwrites: [
-
-                            {
-                                id:
-                                    guild.roles.everyone.id,
-
-                                deny: [
-                                    PermissionFlagsBits.ViewChannel
-                                ]
-                            },
-
-                            {
-                                id:
-                                    interaction.user.id,
-
-                                allow: [
-                                    PermissionFlagsBits.ViewChannel,
-                                    PermissionFlagsBits.SendMessages,
-                                    PermissionFlagsBits.ReadMessageHistory
-                                ]
-                            },
-
-                            {
-                                id:
-                                    SUPPORT_ROLE_ID,
-
-                                allow: [
-                                    PermissionFlagsBits.ViewChannel,
-                                    PermissionFlagsBits.SendMessages,
-                                    PermissionFlagsBits.ReadMessageHistory
-                                ]
-                            },
-
-                            {
-                                id:
-                                    client.user.id,
-
-                                allow: [
-                                    PermissionFlagsBits.ViewChannel,
-                                    PermissionFlagsBits.SendMessages,
-                                    PermissionFlagsBits.ReadMessageHistory,
-                                    PermissionFlagsBits.ManageChannels,
-                                    PermissionFlagsBits.ManageMessages
-                                ]
-                            }
-                        ]
-                    });
-
-                // ==================================
-                // TICKET BUTTONS
-                // ==================================
-
-                const claimButton =
-                    new ButtonBuilder()
-                        .setCustomId(
-                            "claim_ticket"
-                        )
-                        .setLabel(
-                            "Claim Ticket"
-                        )
-                        .setEmoji(
-                            "\uD83D\uDC64"
-                        )
-                        .setStyle(
-                            ButtonStyle.Success
-                        );
-
-                const closeButton =
-                    new ButtonBuilder()
-                        .setCustomId(
-                            "close_ticket"
-                        )
-                        .setLabel(
-                            "Close Ticket"
-                        )
-                        .setEmoji(
-                            "\uD83D\uDD12"
-                        )
-                        .setStyle(
-                            ButtonStyle.Danger
-                        );
-
-                const row =
-                    new ActionRowBuilder()
-                        .addComponents(
-                            claimButton,
-                            closeButton
-                        );
-
-                // ==================================
-                // TICKET EMBED
-                // ==================================
-
-                const ticketEmbed =
-                    new EmbedBuilder()
-                        .setTitle(
-                            "Ticket Created"
-                        )
-                        .setDescription(
-                            "Welcome " +
-                            interaction.user +
-                            "!\n\n" +
-                            "A member of the Support Team will help you shortly."
-                        )
-                        .addFields(
-
-                            {
-                                name:
-                                    "Opened by",
-
-                                value:
-                                    interaction.user.toString(),
-
-                                inline:
-                                    true
-                            },
-
-                            {
-                                name:
-                                    "Roblox Username",
-
-                                value:
-                                    robloxUsername,
-
-                                inline:
-                                    true
-                            },
-
-                            {
-                                name:
-                                    "Reason",
-
-                                value:
-                                    reason
-                            }
-                        )
-                        .setColor(
-                            0x5865F2
-                        )
-                        .setTimestamp();
-
-                // ==================================
-                // SEND TICKET MESSAGE
-                // ==================================
-
-                await ticketChannel.send({
-
-                    content:
-                        "<@&" +
-                        SUPPORT_ROLE_ID +
-                        "> " +
-                        interaction.user,
-
-                    embeds: [
-                        ticketEmbed
-                    ],
-
-                    components: [
-                        row
-                    ],
-
-                    allowedMentions: {
-
-                        roles: [
-                            SUPPORT_ROLE_ID
-                        ],
-
-                        users: [
-                            interaction.user.id
-                        ]
-                    }
-                });
-
-                // Update activity
-                await updateTicketActivity();
-
-                await interaction.editReply({
-
-                    content:
-                        "Your ticket has been created: " +
-                        ticketChannel
-                });
-
-                console.log(
-                    "Ticket created by " +
-                    interaction.user.tag
-                );
-
-            } catch (error) {
-
-                console.error(
-                    "TICKET CREATION ERROR:",
-                    error
-                );
-
-                await interaction.editReply({
-
-                    content:
-                        "I could not create your ticket. " +
-                        "Please check the bot permissions."
-                });
-            }
-
-            return;
-        }
-
-        // ======================================
-        // CLOSE TICKET MODAL
-        // ======================================
-
-        if (
-            interaction.isModalSubmit() &&
-            interaction.customId === "close_ticket_modal"
-        ) {
-
-            if (!isSupportStaff(interaction)) {
-
-                return interaction.reply({
-
-                    content:
-                        "Only the Support Team can close tickets.",
-
-                    flags:
-                        MessageFlags.Ephemeral
-                });
-            }
-
-            await interaction.deferReply({
-                flags:
-                    MessageFlags.Ephemeral
+            await interaction.editReply({
+                content:
+                    "I could not close this ticket."
             });
-
-            const channel =
-                interaction.channel;
-
-            if (!channel) {
-
-                return interaction.editReply({
-
-                    content:
-                        "Ticket channel was not found."
-                });
-            }
-
-            const closeReason =
-                interaction.fields.getTextInputValue(
-                    "close_reason"
-                );
-
-            try {
-
-                let ticketUserId =
-                    null;
-
-                if (
-                    channel.name.startsWith(
-                        "ticket-"
-                    )
-                ) {
-
-                    ticketUserId =
-                        channel.name.substring(
-                            "ticket-".length
-                        );
-                }
-
-                // ==================================
-                // LOCK TICKET
-                // ==================================
-
-                await channel.permissionOverwrites.edit(
-                    interaction.guild.roles.everyone.id,
-                    {
-                        ViewChannel:
-                            false
-                    }
-                );
-
-                if (
-                    ticketUserId &&
-                    /^\d+$/.test(
-                        ticketUserId
-                    )
-                ) {
-
-                    await channel.permissionOverwrites.edit(
-                        ticketUserId,
-                        {
-                            ViewChannel:
-                                true,
-
-                            SendMessages:
-                                false,
-
-                            ReadMessageHistory:
-                                true
-                        }
-                    );
-                }
-
-                // ==================================
-                // RENAME TICKET
-                // ==================================
-
-                if (
-                    channel.name.startsWith(
-                        "ticket-"
-                    )
-                ) {
-
-                    await channel.setName(
-                        "closed-" +
-                        channel.name.substring(
-                            "ticket-".length
-                        )
-                    );
-                }
-
-                // ==================================
-                // CLOSED EMBED
-                // ==================================
-
-                const closedEmbed =
-                    new EmbedBuilder()
-                        .setTitle(
-                            "Ticket Closed"
-                        )
-                        .setDescription(
-                            "This ticket has been closed and locked."
-                        )
-                        .addFields(
-
-                            {
-                                name:
-                                    "Closed by",
-
-                                value:
-                                    interaction.user.toString(),
-
-                                inline:
-                                    true
-                            },
-
-                            {
-                                name:
-                                    "Reason",
-
-                                value:
-                                    closeReason
-                            }
-                        )
-                        .setColor(
-                            0xED4245
-                        )
-                        .setTimestamp();
-
-                await channel.send({
-
-                    embeds: [
-                        closedEmbed
-                    ]
-                });
-
-                // Update activity
-                await updateTicketActivity();
-
-                await interaction.editReply({
-
-                    content:
-                        "Ticket closed successfully."
-                });
-
-                console.log(
-                    "Ticket closed by " +
-                    interaction.user.tag
-                );
-
-            } catch (error) {
-
-                console.error(
-                    "CLOSE ERROR:",
-                    error
-                );
-
-                await interaction.editReply({
-
-                    content:
-                        "I could not close this ticket."
-                });
-            }
-
-            return;
         }
+
+        return;
     }
+}
+
+
 );
 
-// ==========================================
-// LOGIN
-// ==========================================
+if (!TOKEN) {
+console.error(
+"DISCORD_TOKEN is missing."
+);
 
-client.login(TOKEN).catch((error) => {
 
-    console.error(
-        "LOGIN ERROR:",
-        error
-    );
+process.exit(1);
+
+
+}
+
+client.login(TOKEN).catch(error => {
+console.error(
+"LOGIN ERROR:",
+error
+);
 });
